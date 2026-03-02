@@ -1,0 +1,243 @@
+<%- include('partials/header.ejs'); -%>
+
+<div class="app-wrapper">
+  <div class="py-5 text-center">
+    <img class="d-block mx-auto mb-4" src="/assets/icons/to-do-list.png" alt="" width="72" height="72">
+    <h2>Todo List</h2>
+    <p class="lead">Keep track of your daily tasks</p>
+  </div>
+  <div class="main-grid">
+
+    <!-- ── Left: Add Task + Task List ── -->
+    <div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Add a Task</h2>
+        </div>
+        <div class="task-panel">
+
+          <!-- Date Picker -->
+          <div class="date-picker-wrapper">
+            <label for="task-date-picker">Schedule for</label>
+            <input type="date" id="task-date-picker" value="<%= new Date().toISOString().split('T')[0] %>" />
+          </div>
+
+          <!-- Add Form -->
+          <form class="add-form" action="/add" method="post" id="add-task-form">
+            <input type="hidden" name="taskDate" id="hidden-task-date" value="<%= new Date().toISOString().split('T')[0] %>" />
+            <input type="text" name="newItem" placeholder="What needs to be done?" autocomplete="off" autofocus />
+            <button class="add-btn" type="submit" name="list" value="<%= listTitle %>">
+              <span>+</span> Add Task
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Task List -->
+      <div class="card" style="margin-top: 1.2rem;">
+        <div class="card-header">
+          <h2>All Tasks</h2>
+          <span style="font-size:0.8rem;color:var(--ink-muted)"><%= listItems.length %> items</span>
+        </div>
+        <div class="task-panel">
+          <% if (listItems.length === 0) { %>
+            <p style="color:var(--ink-muted);font-size:0.88rem;padding:0.5rem 0;">No tasks yet. Add one above!</p>
+          <% } %>
+          <% for(let item of listItems) { %>
+            <div class="item">
+              <form action="/delete" method="post">
+                <input type="checkbox" onchange="this.form.submit()" name="deleteItemId" value="<%= item.id %>">
+              </form>
+
+              <p id="title<%= item.id %>"><%= item.title %></p>
+
+              <% if(item.date) { %>
+                <span class="task-date-badge"><%= new Date(item.date + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'}) %></span>
+              <% } %>
+
+              <form class="edit" action="/edit" method="post">
+                <input type="hidden" name="updatedItemId" value="<%= item.id %>">
+                <input id="input<%= item.id %>" type="text" name="updatedItemTitle" value="<%= item.title %>" autocomplete="off" hidden />
+                <button id="done<%= item.id %>" class="edit" type="submit" hidden>
+                  <img class="icon" src="/assets/icons/check-solid.svg" alt="save">
+                </button>
+              </form>
+              <button id="edit<%= item.id %>" class="edit" onclick="handler('<%= item.id %>')">
+                <img class="icon" src="/assets/icons/pencil-solid.svg" alt="edit">
+              </button>
+            </div>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right: Calendar ── -->
+    <div class="card calendar-card">
+      <div class="card-header">
+        <h2>Calendar</h2>
+        <div class="cal-nav">
+          <button id="prev-month">&#8592;</button>
+          <span id="cal-month-label"></span>
+          <button id="next-month">&#8594;</button>
+        </div>
+      </div>
+      <div class="cal-grid-wrapper">
+        <div class="cal-weekdays">
+          <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span>
+          <span>Thu</span><span>Fri</span><span>Sat</span>
+        </div>
+        <div class="cal-days" id="cal-days"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Sync date picker → hidden form field ──
+  const datePicker = document.getElementById('task-date-picker');
+  const hiddenDate = document.getElementById('hidden-task-date');
+  datePicker.addEventListener('change', () => {
+    hiddenDate.value = datePicker.value;
+  });
+
+  // ── Task data from server ──
+  const tasks = <%- JSON.stringify(listItems || []) %>;
+
+  // Build a map: "YYYY-MM-DD" → [task, ...]
+  function buildTaskMap(tasks) {
+    const map = {};
+    tasks.forEach(t => {
+      if (t.date) {
+        if (!map[t.date]) map[t.date] = [];
+        map[t.date].push(t);
+      }
+    });
+    return map;
+  }
+  const taskMap = buildTaskMap(tasks);
+
+  // ── Calendar State ──
+  const today = new Date();
+  let viewYear = today.getFullYear();
+  let viewMonth = today.getMonth();
+  let selectedDate = datePicker.value;
+
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+
+  function toKey(y, m, d) {
+    return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  function renderCalendar() {
+    const label = document.getElementById('cal-month-label');
+    label.textContent = `${MONTHS[viewMonth]} ${viewYear}`;
+
+    const container = document.getElementById('cal-days');
+    container.innerHTML = '';
+
+    const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const daysInPrev = new Date(viewYear, viewMonth, 0).getDate();
+
+    // Prev month padding
+    for (let i = firstDay - 1; i >= 0; i--) {
+      const day = daysInPrev - i;
+      const m = viewMonth === 0 ? 11 : viewMonth - 1;
+      const y = viewMonth === 0 ? viewYear - 1 : viewYear;
+      container.appendChild(makeCell(y, m, day, true));
+    }
+
+    // Current month
+    for (let d = 1; d <= daysInMonth; d++) {
+      container.appendChild(makeCell(viewYear, viewMonth, d, false));
+    }
+
+    // Next month paddings
+    const total = firstDay + daysInMonth;
+    const remaining = total % 7 === 0 ? 0 : 7 - (total % 7);
+    for (let d = 1; d <= remaining; d++) {
+      const m = viewMonth === 11 ? 0 : viewMonth + 1;
+      const y = viewMonth === 11 ? viewYear + 1 : viewYear;
+      container.appendChild(makeCell(y, m, d, true));
+    }
+  }
+
+  function makeCell(y, m, d, otherMonth) {
+    const key = toKey(y, m, d);
+    const cell = document.createElement('div');
+    cell.className = 'cal-day' + (otherMonth ? ' other-month' : '');
+
+    const isToday = (y === today.getFullYear() && m === today.getMonth() && d === today.getDate());
+    if (isToday) cell.classList.add('today');
+    if (key === selectedDate) cell.classList.add('selected');
+
+    const numEl = document.createElement('span');
+    numEl.className = 'day-num';
+    numEl.textContent = d;
+    cell.appendChild(numEl);
+
+    // Tasks for this day
+    const dayTasks = taskMap[key] || [];
+    const maxShow = 2;
+    dayTasks.slice(0, maxShow).forEach(t => {
+      const chip = document.createElement('span');
+      chip.className = 'cal-task-chip';
+      chip.textContent = t.title;
+      cell.appendChild(chip);
+    });
+    if (dayTasks.length > maxShow) {
+      const more = document.createElement('span');
+      more.className = 'more-tasks';
+      more.textContent = `+${dayTasks.length - maxShow} more`;
+      cell.appendChild(more);
+    }
+
+    // Click to select this date in the date picker
+    cell.addEventListener('click', () => {
+      if (!otherMonth) {
+        selectedDate = key;
+        datePicker.value = key;
+        hiddenDate.value = key;
+        renderCalendar();
+        // Navigate calendar if needed
+        if (m !== viewMonth) { viewMonth = m; viewYear = y; renderCalendar(); }
+      }
+    });
+
+    return cell;
+  }
+
+  document.getElementById('prev-month').addEventListener('click', () => {
+    viewMonth--;
+    if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+    renderCalendar();
+  });
+  document.getElementById('next-month').addEventListener('click', () => {
+    viewMonth++;
+    if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+    renderCalendar();
+  });
+
+  // Also update calendar view when user changes the date picker manually
+  datePicker.addEventListener('change', () => {
+    selectedDate = datePicker.value;
+    const parts = datePicker.value.split('-');
+    viewYear = parseInt(parts[0]);
+    viewMonth = parseInt(parts[1]) - 1;
+    renderCalendar();
+  });
+
+  renderCalendar();
+
+  // ── Edit handler ──
+  function handler(id) {
+    document.getElementById("title" + id).setAttribute("hidden", true);
+    document.getElementById("edit" + id).setAttribute("hidden", true);
+    document.getElementById("done" + id).removeAttribute("hidden");
+    document.getElementById("input" + id).removeAttribute("hidden");
+  }
+</script>
+
+<%- include('partials/footer.ejs'); -%>
