@@ -52,7 +52,7 @@
               <p id="title<%= item.id %>"><%= item.title %></p>
 
               <% if(item.date) { %>
-                <span class="task-date-badge"><%= new Date(item.date + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'}) %></span>
+                <span class="task-date-badge"><%= item.date %></span>
               <% } %>
 
               <form class="edit" action="/edit" method="post">
