@@ -33,11 +33,16 @@ let items = [
 app.get("/", async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM items ORDER BY id ASC");
-    items = result.rows;
+    const formattedItems = result.rows.map(item => {
+      return {
+        ...item,
+        date: item.date ? new Date(item.date).toISOString().split('T')[0] : null
+      };
+    });
 
     res.render("index.ejs", {
       listTitle: "Today",
-      listItems: items,
+      listItems: formattedItems,
     });
   } catch (err) {
     console.log(err);
