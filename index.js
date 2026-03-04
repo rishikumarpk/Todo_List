@@ -65,8 +65,12 @@ app.post("/edit", async (req, res) => {
   const id = req.body.updatedItemId;
 
   try {
-    await db.query("UPDATE items SET title = ($1) WHERE id = $2", [item, id]);
-    res.redirect("/");
+    const result = await db.query("UPDATE items SET title = ($1) WHERE id = $2 RETURNING *", [item, id]);
+    const updated = result.rows[0];
+    if (updated.date) {
+      updated.date = new Date(updated.date).toISOString().split('T')[0];
+    }
+    res.json(updated);
   } catch (err) {
     console.log(err);
   }
