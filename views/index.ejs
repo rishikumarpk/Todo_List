@@ -51,7 +51,7 @@
 
               <% if(item.date) { %>
                 <span class="task-date-badge">
-                  <%= new Date(item.date + 'T00:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'}) %>
+                  <%= new Date(item.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric'}) %>
                 </span>
               <% } %>
 
@@ -97,7 +97,8 @@
   function createTaskElement(task) {
     const wrapper = document.createElement("div");
     wrapper.className = "item";
-    const dateBadge = task.date
+    const cleanDate = task.date ? String(task.date).slice(0, 10) : null;
+    const dateBadge = cleanDate
       ? `<span class="task-date-badge">${new Date(cleanDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`
       : "";
     wrapper.innerHTML = `
@@ -259,31 +260,36 @@
       const params = new URLSearchParams(formData);
 
       try {
-        const response = await fetch('/add', { method: 'POST', body: params });
-        if (response.ok) {
-          const newItem = await response.json();
-          const taskPanel = document.getElementById('main-task-list');
+        const response = await fetch('/add', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params });
+        const newItem = await response.json();
 
-          // Remove "No tasks yet" message
-          const noTasksMsg = taskPanel.querySelector('p');
-          if (noTasksMsg && noTasksMsg.textContent.includes("No tasks yet")) {
-            noTasksMsg.remove();
-          }
-
-          // Always build fresh using createTaskElement for consistent structure
-          const newTaskElement = createTaskElement(newItem);
-
-          taskPanel.appendChild(newTaskElement);
-
-          // Update state
-          if (newItem.date) newItem.date = String(newItem.date).slice(0, 10);
-          tasks.push(newItem);
-          syncCalendar();
-
-          this.reset();
-          setupDeleteListeners();
-          setupEditListeners();
+        if (!newItem || !newItem.id) {
+          console.error("Bad response from /add:", newItem);
+          return;
         }
+
+        const taskPanel = document.getElementById('main-task-list');
+
+        // Remove "No tasks yet" message
+        const noTasksMsg = taskPanel.querySelector('p');
+        if (noTasksMsg && noTasksMsg.textContent.includes("No tasks yet")) {
+          noTasksMsg.remove();
+        }
+
+        // Normalize date before anything
+        if (newItem.date) newItem.date = String(newItem.date).slice(0, 10);
+
+        // Build and append the new task element
+        const newTaskElement = createTaskElement(newItem);
+        taskPanel.appendChild(newTaskElement);
+
+        // Update state
+        tasks.push(newItem);
+        syncCalendar();
+
+        this.reset();
+        setupDeleteListeners();
+        setupEditListeners();
       } catch (err) { 
         console.error("Critical Error adding task:", err); 
       }
