@@ -45,9 +45,7 @@
           <% } %>
           <% for(let item of listItems) { %>
             <div class="item">
-              <form action="/delete" method="post">
-                <input type="checkbox" class="delete-checkbox" value="<%= item.id %>">
-              </form>
+              <input type="checkbox" class="delete-checkbox" value="<%= item.id %>">
 
               <p id="title<%= item.id %>"><%= item.title %></p>
 
@@ -57,14 +55,14 @@
                 </span>
               <% } %>
 
-              <form class="edit" action="/edit" method="post">
+              <form class="edit-form" data-id="<%= item.id %>">
                 <input type="hidden" name="updatedItemId" value="<%= item.id %>">
                 <input id="input<%= item.id %>" type="text" name="updatedItemTitle" value="<%= item.title %>" autocomplete="off" hidden />
-                <button id="done<%= item.id %>" class="edit" type="submit" hidden>
+                <button id="done<%= item.id %>" type="submit" hidden>
                   <img class="icon" src="/assets/icons/check-solid.svg" alt="save">
                 </button>
               </form>
-              <button id="edit<%= item.id %>" class="edit" onclick="handler('<%= item.id %>')">
+              <button id="edit<%= item.id %>" class="edit edit-btn">
                 <img class="icon" src="/assets/icons/pencil-solid.svg" alt="edit">
               </button>
             </div>
@@ -96,48 +94,28 @@
 </div>
 
 <script>
-  //Added to fix the task card layout
   function createTaskElement(task) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "item";
-
-  wrapper.innerHTML = `
-    <form class="edit-form" data-id="${task.id}">
-      <div class="item-content">
+    const wrapper = document.createElement("div");
+    wrapper.className = "item";
+    const dateBadge = task.date
+      ? `<span class="task-date-badge">${new Date(task.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`
+      : "";
+    wrapper.innerHTML = `
+      <input type="checkbox" class="delete-checkbox" value="${task.id}">
+      <p id="title${task.id}">${task.title}</p>
+      ${dateBadge}
+      <form class="edit-form" data-id="${task.id}">
         <input type="hidden" name="updatedItemId" value="${task.id}">
-        <input type="checkbox" class="delete-checkbox" value="${task.id}" autocomplete="off">
-
-        <p id="title${task.id}">${task.title}</p>
-
-        <input type="text"
-               id="input${task.id}"
-               name="updatedItemTitle"
-               value="${task.title}"
-               hidden>
-
-        ${task.date ? `
-          <span class="task-date-badge">
-            ${new Date(task.date + 'T00:00:00')
-              .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </span>
-        ` : ""}
-      </div>
-
-      <button type="button"
-              id="edit${task.id}"
-              class="edit-btn">
-        <img class="icon" src="/assets/icons/pencil-solid.svg">
+        <input id="input${task.id}" type="text" name="updatedItemTitle" value="${task.title}" autocomplete="off" hidden>
+        <button id="done${task.id}" type="submit" hidden>
+          <img class="icon" src="/assets/icons/check-solid.svg" alt="save">
+        </button>
+      </form>
+      <button id="edit${task.id}" class="edit edit-btn">
+        <img class="icon" src="/assets/icons/pencil-solid.svg" alt="edit">
       </button>
-
-      <button type="submit"
-              id="done${task.id}"
-              hidden>
-        Done
-      </button>
-    </form>
-  `;
-
-  return wrapper;
+    `;
+    return wrapper;
   }
   // ── Sync date picker → hidden form field ──
   const datePicker = document.getElementById('task-date-picker');
@@ -292,29 +270,8 @@
             noTasksMsg.remove();
           }
 
-          // Try cloning an existing item
-          let template = taskPanel.querySelector('.item');
-
-          let newTaskElement;
-
-          if (template) {
-            newTaskElement = template.cloneNode(true);
-
-            newTaskElement.querySelector('.delete-checkbox').value = newItem.id;
-            newTaskElement.querySelector('p').textContent = newItem.title;
-            newTaskElement.querySelector('p').id = "title" + newItem.id;
-
-            const inputField = newTaskElement.querySelector('input[type="text"]');
-            inputField.id = "input" + newItem.id;
-            inputField.value = newItem.title;
-
-            const hiddenId = newTaskElement.querySelector('input[type="hidden"]');
-            hiddenId.value = newItem.id;
-
-          } else {
-            // 🔥 If no template exists, build fresh
-            newTaskElement = createTaskElement(newItem);
-          }
+          // Always build fresh using createTaskElement for consistent structure
+          const newTaskElement = createTaskElement(newItem);
 
           taskPanel.appendChild(newTaskElement);
 
@@ -363,53 +320,41 @@
       });
     });
   }
-  //AJAX EDIT LISTENERS
+  // ── AJAX Edit Listeners ──
   function setupEditListeners() {
-  document.querySelectorAll(".edit-btn").forEach(btn => {
-    btn.onclick = function () {
-      const id = this.closest("form").dataset.id;
+    // Edit button: toggle to edit mode (button lives outside the form)
+    document.querySelectorAll(".edit-btn").forEach(btn => {
+      btn.onclick = function () {
+        const id = this.id.replace("edit", "");
+        document.getElementById("title" + id).hidden = true;
+        document.getElementById("input" + id).hidden = false;
+        document.getElementById("done" + id).hidden = false;
+        this.hidden = true;
+      };
+    });
 
-      document.getElementById("title" + id).hidden = true;
-      document.getElementById("input" + id).hidden = false;
-      document.getElementById("done" + id).hidden = false;
-      this.hidden = true;
-    };
-  });
-
-  document.querySelectorAll(".edit-form").forEach(form => {
-    form.onsubmit = async function (e) {
-      e.preventDefault();
-
-      const formData = new FormData(this);
-      const params = new URLSearchParams(formData);
-
-      const response = await fetch("/edit", {
-        method: "POST",
-        body: params
-      });
-
-      const updatedTask = await response.json();
-
-      // 🔥 Update UI without refresh
-      document.getElementById("title" + updatedTask.id).textContent = updatedTask.title;
-      document.getElementById("title" + updatedTask.id).hidden = false;
-      document.getElementById("input" + updatedTask.id).hidden = true;
-      document.getElementById("done" + updatedTask.id).hidden = true;
-      document.getElementById("edit" + updatedTask.id).hidden = false;
-
-      // Update local tasks array
-      tasks = tasks.map(t => t.id === updatedTask.id ? updatedTask : t);
-      syncCalendar();
-    };
-  });
-}
-
-  // ── Edit handler ──
-  function handler(id) {
-    document.getElementById("title" + id).setAttribute("hidden", true);
-    document.getElementById("edit" + id).setAttribute("hidden", true);
-    document.getElementById("done" + id).removeAttribute("hidden");
-    document.getElementById("input" + id).removeAttribute("hidden");
+    // Edit form submit: AJAX, no page reload
+    document.querySelectorAll(".edit-form").forEach(form => {
+      form.onsubmit = async function (e) {
+        e.preventDefault();
+        const params = new URLSearchParams(new FormData(this));
+        try {
+          const response = await fetch("/edit", { method: "POST", body: params });
+          const updatedTask = await response.json();
+          const id = updatedTask.id;
+          document.getElementById("title" + id).textContent = updatedTask.title;
+          document.getElementById("title" + id).hidden = false;
+          document.getElementById("input" + id).value = updatedTask.title;
+          document.getElementById("input" + id).hidden = true;
+          document.getElementById("done" + id).hidden = true;
+          document.getElementById("edit" + id).hidden = false;
+          tasks = tasks.map(t => t.id === id ? updatedTask : t);
+          syncCalendar();
+        } catch (err) {
+          console.error("Edit failed:", err);
+        }
+      };
+    });
   }
 
   // Initial setup
