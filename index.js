@@ -53,8 +53,8 @@ app.post("/add", async (req, res) => {
   const item = req.body.newItem;
   const date = req.body.taskDate; 
   try {
-    await db.query("INSERT INTO items (title, date) VALUES ($1, $2)", [item, date]);
-    res.redirect("/");
+    const result = await db.query("INSERT INTO items (title, date) VALUES ($1, $2) RETURNING *", [item, date]);
+    res.json(result.rows[0]);
   } catch (err) {
     console.log(err);
   }
@@ -76,7 +76,7 @@ app.post("/delete", async (req, res) => {
   const id = req.body.deleteItemId;
   try {
     await db.query("DELETE FROM items WHERE id = $1", [id]);
-    res.redirect("/");
+    res.json({ success: true, deletedId: id });
   } catch (err) {
     console.log(err);
   }

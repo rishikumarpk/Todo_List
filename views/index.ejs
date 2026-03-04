@@ -23,7 +23,7 @@
           </div>
 
           <!-- Add Form -->
-          <form class="add-form" action="/add" method="post" id="add-task-form">
+          <form class="add-form" id="add-task-form">
             <input type="hidden" name="taskDate" id="hidden-task-date" value="<%= new Date().toISOString().split('T')[0] %>" />
             <input type="text" name="newItem" placeholder="What needs to be done?" autocomplete="off" autofocus />
             <button class="add-btn" type="submit" name="list" value="<%= listTitle %>">
@@ -39,14 +39,14 @@
           <h2>All Tasks</h2>
           <span style="font-size:0.8rem;color:var(--ink-muted)"><%= listItems.length %> items</span>
         </div>
-        <div class="task-panel">
+        <div class="task-panel" id="main-task-list">
           <% if (listItems.length === 0) { %>
             <p style="color:var(--ink-muted);font-size:0.88rem;padding:0.5rem 0;">No tasks yet. Add one above!</p>
           <% } %>
           <% for(let item of listItems) { %>
             <div class="item">
               <form action="/delete" method="post">
-                <input type="checkbox" onchange="this.form.submit()" name="deleteItemId" value="<%= item.id %>">
+                <input type="checkbox" class="delete-checkbox" value="<%= item.id %>">
               </form>
 
               <p id="title<%= item.id %>"><%= item.title %></p>
@@ -96,6 +96,49 @@
 </div>
 
 <script>
+  //Added to fix the task card layout
+  function createTaskElement(task) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "item";
+
+  wrapper.innerHTML = `
+    <form class="edit-form" data-id="${task.id}">
+      <div class="item-content">
+        <input type="hidden" name="updatedItemId" value="${task.id}">
+        <input type="checkbox" class="delete-checkbox" value="${task.id}" autocomplete="off">
+
+        <p id="title${task.id}">${task.title}</p>
+
+        <input type="text"
+               id="input${task.id}"
+               name="updatedItemTitle"
+               value="${task.title}"
+               hidden>
+
+        ${task.date ? `
+          <span class="task-date-badge">
+            ${new Date(task.date + 'T00:00:00')
+              .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
+        ` : ""}
+      </div>
+
+      <button type="button"
+              id="edit${task.id}"
+              class="edit-btn">
+        <img class="icon" src="/assets/icons/pencil-solid.svg">
+      </button>
+
+      <button type="submit"
+              id="done${task.id}"
+              hidden>
+        Done
+      </button>
+    </form>
+  `;
+
+  return wrapper;
+  }
   // ── Sync date picker → hidden form field ──
   const datePicker = document.getElementById('task-date-picker');
   const hiddenDate = document.getElementById('hidden-task-date');
@@ -104,12 +147,13 @@
   });
 
   // ── Task data from server ──
-  const tasks = <%- JSON.stringify(listItems || []) %>;
+  // Use 'let' so we can filter this array when deleting
+  let tasks = <%- JSON.stringify(listItems || []) %>;
 
   // Build a map: "YYYY-MM-DD" → [task, ...]
-  function buildTaskMap(tasks) {
+  function buildTaskMap(taskList) {
     const map = {};
-    tasks.forEach(t => {
+    taskList.forEach(t => {
       if (t.date) {
         if (!map[t.date]) map[t.date] = [];
         map[t.date].push(t);
@@ -117,7 +161,15 @@
     });
     return map;
   }
-  const taskMap = buildTaskMap(tasks);
+
+  // Global map variable
+  let taskMap = buildTaskMap(tasks);
+
+  // ── New function to keep everything in sync ──
+  function syncCalendar() {
+    taskMap = buildTaskMap(tasks); // Rebuild the map from updated tasks
+    renderCalendar(); // Re-render the calendar days
+  }
 
   // ── Calendar State ──
   const today = new Date();
@@ -134,9 +186,10 @@
 
   function renderCalendar() {
     const label = document.getElementById('cal-month-label');
-    label.textContent = `${MONTHS[viewMonth]} ${viewYear}`;
+    if(label) label.textContent = `${MONTHS[viewMonth]} ${viewYear}`;
 
     const container = document.getElementById('cal-days');
+    if(!container) return;
     container.innerHTML = '';
 
     const firstDay = new Date(viewYear, viewMonth, 1).getDay();
@@ -196,14 +249,12 @@
       cell.appendChild(more);
     }
 
-    // Click to select this date in the date picker
     cell.addEventListener('click', () => {
       if (!otherMonth) {
         selectedDate = key;
         datePicker.value = key;
         hiddenDate.value = key;
         renderCalendar();
-        // Navigate calendar if needed
         if (m !== viewMonth) { viewMonth = m; viewYear = y; renderCalendar(); }
       }
     });
@@ -222,16 +273,136 @@
     renderCalendar();
   });
 
-  // Also update calendar view when user changes the date picker manually
-  datePicker.addEventListener('change', () => {
-    selectedDate = datePicker.value;
-    const parts = datePicker.value.split('-');
-    viewYear = parseInt(parts[0]);
-    viewMonth = parseInt(parts[1]) - 1;
-    renderCalendar();
+
+  // ── AJAX Add Handler ──
+  document.getElementById('add-task-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      const params = new URLSearchParams(formData);
+
+      try {
+        const response = await fetch('/add', { method: 'POST', body: params });
+        if (response.ok) {
+          const newItem = await response.json();
+          const taskPanel = document.getElementById('main-task-list');
+
+          // Remove "No tasks yet" message
+          const noTasksMsg = taskPanel.querySelector('p');
+          if (noTasksMsg && noTasksMsg.textContent.includes("No tasks yet")) {
+            noTasksMsg.remove();
+          }
+
+          // Try cloning an existing item
+          let template = taskPanel.querySelector('.item');
+
+          let newTaskElement;
+
+          if (template) {
+            newTaskElement = template.cloneNode(true);
+
+            newTaskElement.querySelector('.delete-checkbox').value = newItem.id;
+            newTaskElement.querySelector('p').textContent = newItem.title;
+            newTaskElement.querySelector('p').id = "title" + newItem.id;
+
+            const inputField = newTaskElement.querySelector('input[type="text"]');
+            inputField.id = "input" + newItem.id;
+            inputField.value = newItem.title;
+
+            const hiddenId = newTaskElement.querySelector('input[type="hidden"]');
+            hiddenId.value = newItem.id;
+
+          } else {
+            // 🔥 If no template exists, build fresh
+            newTaskElement = createTaskElement(newItem);
+          }
+
+          taskPanel.appendChild(newTaskElement);
+
+          // Update state
+          tasks.push(newItem);
+          syncCalendar();
+
+          this.reset();
+          setupDeleteListeners();
+          setupEditListeners();
+        }
+      } catch (err) { 
+        console.error("Critical Error adding task:", err); 
+      }
   });
 
-  renderCalendar();
+  // ── AJAX Delete Handler ──
+  function setupDeleteListeners() {
+
+    document.querySelectorAll('.delete-checkbox').forEach(checkbox => {
+      checkbox.checked = false; // Force uncheck on refresh/setup 
+      checkbox.replaceWith(checkbox.cloneNode(true));
+    });
+    document.querySelectorAll('.delete-checkbox').forEach(checkbox => {
+      // Remove old listeners to prevent duplicates
+      checkbox.replaceWith(checkbox.cloneNode(true));
+    });
+
+    document.querySelectorAll('.delete-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', async function() {
+        if (this.checked) {
+          const itemId = parseInt(this.value);
+          try {
+            const response = await fetch('/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: `deleteItemId=${itemId}`
+            });
+            if (response.ok) {
+              tasks = tasks.filter(t => t.id !== itemId); // Remove from local data
+              syncCalendar(); // Update calendar
+              this.closest('.item').remove(); // Remove from list
+            }
+          } catch (err) { console.error(err); }
+        }
+      });
+    });
+  }
+  //AJAX EDIT LISTENERS
+  function setupEditListeners() {
+  document.querySelectorAll(".edit-btn").forEach(btn => {
+    btn.onclick = function () {
+      const id = this.closest("form").dataset.id;
+
+      document.getElementById("title" + id).hidden = true;
+      document.getElementById("input" + id).hidden = false;
+      document.getElementById("done" + id).hidden = false;
+      this.hidden = true;
+    };
+  });
+
+  document.querySelectorAll(".edit-form").forEach(form => {
+    form.onsubmit = async function (e) {
+      e.preventDefault();
+
+      const formData = new FormData(this);
+      const params = new URLSearchParams(formData);
+
+      const response = await fetch("/edit", {
+        method: "POST",
+        body: params
+      });
+
+      const updatedTask = await response.json();
+
+      // 🔥 Update UI without refresh
+      document.getElementById("title" + updatedTask.id).textContent = updatedTask.title;
+      document.getElementById("title" + updatedTask.id).hidden = false;
+      document.getElementById("input" + updatedTask.id).hidden = true;
+      document.getElementById("done" + updatedTask.id).hidden = true;
+      document.getElementById("edit" + updatedTask.id).hidden = false;
+
+      // Update local tasks array
+      tasks = tasks.map(t => t.id === updatedTask.id ? updatedTask : t);
+      syncCalendar();
+    };
+  });
+}
 
   // ── Edit handler ──
   function handler(id) {
@@ -240,6 +411,11 @@
     document.getElementById("done" + id).removeAttribute("hidden");
     document.getElementById("input" + id).removeAttribute("hidden");
   }
+
+  // Initial setup
+  renderCalendar();
+  setupDeleteListeners();
+  setupEditListeners();
 </script>
 
 <%- include('partials/footer.ejs'); -%>
