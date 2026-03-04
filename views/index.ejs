@@ -98,7 +98,7 @@
     const wrapper = document.createElement("div");
     wrapper.className = "item";
     const dateBadge = task.date
-      ? `<span class="task-date-badge">${new Date(task.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`
+      ? `<span class="task-date-badge">${new Date(cleanDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>`
       : "";
     wrapper.innerHTML = `
       <input type="checkbox" class="delete-checkbox" value="${task.id}">
@@ -276,6 +276,7 @@
           taskPanel.appendChild(newTaskElement);
 
           // Update state
+          if (newItem.date) newItem.date = String(newItem.date).slice(0, 10);
           tasks.push(newItem);
           syncCalendar();
 
